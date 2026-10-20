@@ -37,55 +37,71 @@ async function startAternosServer() {
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Real desktop User Agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    console.log('[Puppeteer] Opening Aternos Login Page...');
-    await page.goto('https://aternos.org/go/', { waitUntil: 'networkidle2', timeout: 90000 });
+    console.log('[Puppeteer] Opening Direct Aternos Login Page...');
+    await page.goto('https://aternos.org/go/', { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    // Cloudflare বা পপ-আপ পার হওয়ার জন্য ৫ সেকেন্ড ওয়েট
-    await new Promise(r => setTimeout(r, 5000));
+    // Cloudflare/Popups পার হতে ৮ সেকেন্ড বিরতি
+    await new Promise(r => setTimeout(r, 8000));
 
-    console.log('[Puppeteer] Entering Credentials...');
-    await page.waitForSelector('.user', { timeout: 30000 });
-    await page.type('.user', ATERNOS_USER, { delay: 120 });
-    await page.type('.password', ATERNOS_PASS, { delay: 120 });
+    console.log('[Puppeteer] Looking for Login input fields...');
 
-    console.log('[Puppeteer] Clicking Login Button...');
-    await page.click('.btn-login');
+    // Aternos Form Selection (Multiple fallback selectors)
+    const userInput = await page.waitForSelector('#user, .user, input[name="user"], input[type="text"]', { timeout: 40000 });
+    const passInput = await page.waitForSelector('#password, .password, input[name="password"], input[type="password"]', { timeout: 40000 });
 
-    // লগইন সম্পন্ন হওয়ার জন্য ১০ সেকেন্ড ওয়েট
-    await new Promise(r => setTimeout(r, 10000));
+    if (userInput && passInput) {
+      console.log('[Puppeteer] Entering Credentials...');
+      await userInput.type(ATERNOS_USER, { delay: 100 });
+      await passInput.type(ATERNOS_PASS, { delay: 100 });
 
-    console.log('[Puppeteer] Going to Server Page...');
-    await page.goto('https://aternos.org/server/', { waitUntil: 'networkidle2', timeout: 90000 });
+      console.log('[Puppeteer] Submitting Login...');
+      const loginBtn = await page.$('#login, .btn-login, button[type="submit"]');
+      if (loginBtn) {
+        await loginBtn.click();
+      } else {
+        await page.keyboard.press('Enter');
+      }
 
-    await new Promise(r => setTimeout(r, 5000));
-
-    // Start বাটন সিলেক্টর
-    const startBtn = '#start';
-    await page.waitForSelector(startBtn, { timeout: 30000 });
-    
-    console.log('[Puppeteer] Clicking START button...');
-    await page.click(startBtn);
-
-    // যদি কোনো কনফার্মেশন বাটন আসে (যেমন Confirm/Accept)
-    try {
-      const confirmBtn = '#confirm';
-      await page.waitForSelector(confirmBtn, { timeout: 5000 });
-      await page.click(confirmBtn);
-      console.log('[Puppeteer] Clicked Confirm Button!');
-    } catch (e) {
-      // কনফার্ম বাটন না আসলে সমস্যা নেই
+      console.log('[Puppeteer] Waiting after login submission...');
+      await new Promise(r => setTimeout(r, 12000));
     }
 
-    console.log('🚀 [SUCCESS] Aternos Server Started Successfully!');
+    console.log('[Puppeteer] Navigating to Server Dashboard...');
+    await page.goto('https://aternos.org/server/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await new Promise(r => setTimeout(r, 6000));
+
+    // Clicking Start Button
+    console.log('[Puppeteer] Finding START button...');
+    const startBtn = await page.waitForSelector('#start, .btn-start', { timeout: 30000 });
+    if (startBtn) {
+      console.log('[Puppeteer] Clicking START button...');
+      await startBtn.click();
+      await new Promise(r => setTimeout(r, 5000));
+
+      // Handling Accept/Confirm popup if appears
+      try {
+        const confirmBtn = await page.$('#confirm, .btn-confirm');
+        if (confirmBtn) {
+          await confirmBtn.click();
+          console.log('[Puppeteer] Confirmed server start popup!');
+        }
+      } catch (e) {
+        // Ignored if no popup
+      }
+
+      console.log('🚀 [SUCCESS] Aternos Server Started Successfully!');
+    }
 
   } catch (error) {
     console.error('❌ [Puppeteer Error]:', error.message);
   } finally {
     if (browser) await browser.close();
     isRunning = false;
-    console.log('[Puppeteer] Browser Closed.');
+    console.log('[Puppeteer] Browser closed & ready.');
   }
 }
 
